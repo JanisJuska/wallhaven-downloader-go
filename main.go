@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"path"
 	"strings"
 
@@ -91,7 +92,7 @@ func main() {
 	}
 }
 
-func getFlagys() ([]string, []string, int, string) {
+func getFlags() ([]string, []string, int, string) {
 	var searchFlags []string
 	query := pflag.StringP("query", "q", "", "Query to search for")
 	count := pflag.IntP("count", "n", 24, "Total wallpapers to download; fetches multiple pages as needed")
@@ -103,8 +104,20 @@ func getFlagys() ([]string, []string, int, string) {
 	resAtleast := pflag.StringP("resolution", "r", "", "Minimum allowed resolution. Best used together with Ratios (e.g. 1920x1080)")
 	ratio := pflag.StringP("ratios", "R", "", "Aspect ratio filter, comma-separated (e.g. 16x9,16x10)")
 	directory := pflag.StringP("directory", "d", "./wallpapers/", "Output directory [default: ./wallpapers/]")
+	help := pflag.BoolP("help", "h", false, "Print help")
+
+	pflag.Usage = func() {
+		fmt.Println("Usage: wallhaven [OPTIONS] --query <QUERY>")
+		fmt.Println("\nOptions:")
+		pflag.PrintDefaults()
+	}
 
 	pflag.Parse()
+
+	if *help {
+		pflag.Usage()
+		os.Exit(0)
+	}
 
 	queryString := "q=" + strings.Join(strings.Fields(*query), "+")
 	catString := fmt.Sprintf("categories=%d", *category)
