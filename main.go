@@ -9,9 +9,13 @@ import (
 	"os"
 	"path"
 	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
 
-	"github.com/hashicorp/go-getter"
 	"github.com/spf13/pflag"
+	"github.com/vbauerster/mpb/v8"
+	"github.com/vbauerster/mpb/v8/decor"
 )
 
 type Response struct {
@@ -54,42 +58,112 @@ type Meta struct {
 }
 
 func main() {
+	var downloaded int64
+	var totalBytes int64
+	var skipped int64
+
+	var wg sync.WaitGroup
+	p := mpb.New(
+		mpb.WithWidth(60),
+	)
+
+	sem := make(chan struct{}, 5)
+
 	searchFlags, pageSlice, remainder, directory := getFlags()
 
+	os.MkdirAll(directory, os.ModePerm)
+
 	lastPage := len(pageSlice) - 1
-	lastPageCount := 24 - remainder
+
+	var allWallpapers []Wallpaper
 
 	for pageCount, pageString := range pageSlice {
 		searchString := fmt.Sprintf("%v&%v", strings.Join(searchFlags, "&"), pageString)
-		fmt.Println(searchString)
+
 		data, err := getRequestData(searchString)
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		if pageCount < lastPage {
-			for _, x := range data.Data {
-				filename := path.Base(x.Path)
-				dst := fmt.Sprintf("%s%s", directory, filename)
-				err := getter.GetFile(dst, x.Path)
-				if err != nil {
-					log.Fatal(err)
-				}
-			}
-		} else {
-			for i, x := range data.Data {
-				if i == lastPageCount {
-					break
-				}
-				filename := path.Base(x.Path)
-				dst := fmt.Sprintf("%s%s", directory, filename)
-				err := getter.GetFile(dst, x.Path)
-				if err != nil {
-					log.Fatal(err)
-				}
-			}
+		limit := len(data.Data)
+
+		if pageCount == lastPage {
+			limit = len(data.Data) - remainder
 		}
+
+		allWallpapers = append(allWallpapers, data.Data[:limit]...)
 	}
+
+	totalBar := p.New(
+		int64(len(allWallpapers)),
+		mpb.BarStyle(),
+		mpb.PrependDecorators(
+			decor.Name("Downloading "),
+			decor.CountersNoUnit("%d / %d"),
+		),
+	)
+
+	start := time.Now()
+
+	for _, x := range allWallpapers {
+		filename := path.Base(x.Path)
+		dst := fmt.Sprintf("%s%s", directory, filename)
+
+		// skip existing files
+		if _, err := os.Stat(dst); err == nil {
+			atomic.AddInt64(&skipped, 1)
+			totalBar.Increment()
+			continue
+		}
+
+		wg.Add(1)
+
+		go func(url, dst string) {
+			defer wg.Done()
+			defer totalBar.Increment() // always increments
+
+			sem <- struct{}{}
+
+			err := downloadFile(url, dst, p)
+
+			<-sem
+
+			if err != nil {
+				log.Printf("failed: %s\n", url)
+				return
+			}
+
+			atomic.AddInt64(&downloaded, 1)
+
+			// get file size after download
+			info, err := os.Stat(dst)
+			if err == nil {
+				atomic.AddInt64(&totalBytes, info.Size())
+			}
+		}(x.Path, dst)
+	}
+
+	wg.Wait()
+	p.Wait()
+
+	elapsed := time.Since(start).Seconds()
+
+	mb := float64(totalBytes) / (1024 * 1024)
+	speed := mb / elapsed
+
+	fmt.Println()
+
+	totalFiles := len(allWallpapers)
+
+	fmt.Printf(
+		"Done: %d/%d files (%d skipped) (%.2f MB) in %.1fs (%.2f MB/s)\n",
+		downloaded,
+		totalFiles,
+		skipped,
+		mb,
+		elapsed,
+		speed,
+	)
 }
 
 func getFlags() ([]string, []string, int, string) {
@@ -201,4 +275,53 @@ func getRequestData(searchString string) (Response, error) {
 	json.Unmarshal(body, &data)
 
 	return data, nil
+}
+
+func downloadFile(url, dst string, p *mpb.Progress) error {
+	resp, err := http.Get(url)
+	if err != nil {
+		return err
+	}
+
+	defer resp.Body.Close()
+
+	size := resp.ContentLength
+	if size <= 0 {
+		size = -1
+	}
+
+	filename := path.Base(dst)
+
+	bar := p.New(
+		size,
+		mpb.BarStyle(),
+		mpb.PrependDecorators(
+			decor.Name(shortName(filename)+" "),
+			decor.Percentage(),
+		),
+		mpb.AppendDecorators(
+			decor.EwmaETA(decor.ET_STYLE_GO, 60),
+			decor.AverageSpeed(decor.SizeB1024(0), "% .2f"),
+		),
+	)
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+
+	defer out.Close()
+
+	reader := bar.ProxyReader(resp.Body)
+	defer reader.Close()
+
+	_, err = io.Copy(out, reader)
+	return err
+}
+
+func shortName(name string) string {
+	if len(name) > 30 {
+		return name[:27] + "..."
+	}
+	return name
 }
