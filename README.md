@@ -15,6 +15,8 @@ This tool allows you to search, filter, and download wallpapers directly from th
 * 🗂 Preserves original filenames and extensions
 * ⚡ Lightweight and fast
 * 📖 Built-in `--help` flag for CLI usage guidance
+* 📊 **Live download progress bars (per-file) with speed & ETA**
+* 📈 **Final summary (files downloaded, skipped, total size, average speed)**
 
 ---
 
@@ -59,7 +61,7 @@ Usage: wallhaven [OPTIONS] --query <QUERY>
 | `--order`      | `-o`  | desc, asc                                                | `desc`          |
 | `--colors`     | `-C`  | Dominant color filter (hex without #)                    | none            |
 | `--resolution` | `-r`  | Minimum resolution (e.g. 1920x1080)                      | none            |
-| `--ratios`     | `-R`  | Aspect ratio filter (e.g. 16x9,16x10)                    | none            |
+| `--ratios`     | `-R`  | Aspect ratio filter, comma-separated                     | none            |
 | `--directory`  | `-d`  | Output directory                                         | `./wallpapers/` |
 | `--help`       | `-h`  | Print help and usage information                         | —               |
 
@@ -108,6 +110,22 @@ wallhaven \
 
 ---
 
+## 📊 Download Output
+
+During downloads, each file displays a live progress bar including:
+
+* Percentage completed
+* Estimated time remaining (ETA)
+* Current download speed
+
+After completion, a summary is shown:
+
+```text
+Done: 50/50 files downloaded (3 skipped) (123.47 MB) in 21.2s (5.82 MB/s)
+```
+
+---
+
 ## 📄 Pagination
 
 Wallhaven returns **24 results per page**.
@@ -116,7 +134,7 @@ Wallhaven returns **24 results per page**.
 * The app automatically:
 
   * Calculates how many pages are needed
-  * Fetches them sequentially
+  * Fetches them
   * Stops exactly at the requested count
 
 ---
@@ -124,6 +142,7 @@ Wallhaven returns **24 results per page**.
 ## 📁 File Naming
 
 * Files are saved using their original names from Wallhaven
+
   Example:
 
   ```
@@ -132,6 +151,8 @@ Wallhaven returns **24 results per page**.
   ```
 
 * Original file extensions are preserved (`.jpg`, `.png`, etc.)
+
+* Existing files are automatically **skipped**
 
 ---
 
@@ -148,10 +169,12 @@ Special thanks for the CLI design and UX ideas.
 ## 🛠 Future Improvements
 
 * ~~`--help` flag with improved CLI output~~ ✅
+* ~~Download progress feedback (current file, progress, etc.)~~ ✅
+* ~~Concurrent downloads for better performance~~ ✅
 * [ ] API key support (for NSFW and user-specific content)
-* [ ] Download progress feedback (current file, progress, etc.)
-* [ ] Concurrent downloads for better performance
 * [ ] `--dry-run` mode (preview downloads without saving)
+* [ ] Retry logic for failed downloads
+* [ ] Resume partial downloads
 * [ ] Optional GUI application (experimental idea)
 
 ---
@@ -193,7 +216,7 @@ MIT License
 
 ## 🚧 Status
 
-**v1.0 — Functional and stable**
+**v1.1 — Stable with progress UI and concurrent downloads**
 
 More features and improvements are planned.
 
