@@ -170,14 +170,14 @@ func getFlags() ([]string, []string, int, string) {
 	var searchFlags []string
 	query := pflag.StringP("query", "q", "", "Query to search for")
 	count := pflag.IntP("count", "n", 24, "Total wallpapers to download; fetches multiple pages as needed")
-	category := pflag.IntP("category", "c", 111, "100/010/001 or combined (general/anime/people) [default: 111]")
-	purity := pflag.IntP("purity", "p", 110, "100/110/111 (sfw/sketchy/nsfw) [default: 110]")
-	sort := pflag.StringP("sort", "s", "date_added", "date_added, relevance, random, views, favorites, toplist [default: date_added]")
-	order := pflag.StringP("order", "o", "desc", "desc, asc [default: desc]")
+	category := pflag.StringP("category", "c", "111", "100/010/001 or combined (general/anime/people) ")
+	purity := pflag.StringP("purity", "p", "100", "100/110/111 (sfw/sketchy/nsfw) ")
+	sort := pflag.StringP("sort", "s", "date_added", "date_added, relevance, random, views, favorites, toplist ")
+	order := pflag.StringP("order", "o", "desc", "desc, asc ")
 	colors := pflag.StringP("colors", "C", "", "Dominant color filter (hex without #, e.g. 660000)")
 	resAtleast := pflag.StringP("resolution", "r", "", "Minimum allowed resolution. Best used together with Ratios (e.g. 1920x1080)")
 	ratio := pflag.StringP("ratios", "R", "", "Aspect ratio filter, comma-separated (e.g. 16x9,16x10)")
-	directory := pflag.StringP("directory", "d", "./wallpapers/", "Output directory [default: ./wallpapers/]")
+	directory := pflag.StringP("directory", "d", "./wallpapers/", "Output directory ")
 	help := pflag.BoolP("help", "h", false, "Print help")
 
 	pflag.Usage = func() {
@@ -194,8 +194,8 @@ func getFlags() ([]string, []string, int, string) {
 	}
 
 	queryString := "q=" + strings.Join(strings.Fields(*query), "+")
-	catString := fmt.Sprintf("categories=%d", *category)
-	pureString := fmt.Sprintf("purity=%d", *purity)
+	catString := fmt.Sprintf("categories=%s", *category)
+	pureString := fmt.Sprintf("purity=%s", *purity)
 	sortString := fmt.Sprintf("sorting=%s", *sort)
 	ordString := fmt.Sprintf("order=%s", *order)
 	colString := fmt.Sprintf("colors=%s", *colors)
@@ -250,7 +250,17 @@ func getPages(count int, lastPage int) (int, int) {
 }
 
 func getRequestData(searchString string) (Response, error) {
+	apiKey := os.Getenv("WALLHAVEN_API_KEY")
+
 	url := fmt.Sprintf("https://wallhaven.cc/api/v1/search?%s", searchString)
+
+	if apiKey != "" {
+		url = fmt.Sprintf("%s&apikey=%s", url, apiKey)
+		// request.Header.Set("X-API-Key", apiKey)
+	} else {
+		log.Println("No API key provided (WALLHAVEN_API_KEY). NSFW results may be unavailable.")
+	}
+
 	client := &http.Client{}
 
 	request, err := http.NewRequest("GET", url, nil)
@@ -273,6 +283,9 @@ func getRequestData(searchString string) (Response, error) {
 	var data Response
 
 	json.Unmarshal(body, &data)
+	// if err != nil {
+	// 	return Response{}, err
+	// }
 
 	return data, nil
 }

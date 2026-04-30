@@ -17,6 +17,7 @@ This tool allows you to search, filter, and download wallpapers directly from th
 * 📖 Built-in `--help` flag for CLI usage guidance
 * 📊 **Live download progress bars (per-file) with speed & ETA**
 * 📈 **Final summary (files downloaded, skipped, total size, average speed)**
+* 🔑 **API key support (required for NSFW and user-specific content)**
 
 ---
 
@@ -64,6 +65,54 @@ Usage: wallhaven [OPTIONS] --query <QUERY>
 | `--ratios`     | `-R`  | Aspect ratio filter, comma-separated                     | none            |
 | `--directory`  | `-d`  | Output directory                                         | `./wallpapers/` |
 | `--help`       | `-h`  | Print help and usage information                         | —               |
+
+---
+
+## 🔑 API Key Support
+
+Wallhaven requires an API key for:
+
+* 🔞 NSFW content (`purity=111`)
+* 👤 User-specific collections
+
+### Set your API key
+
+#### Bash / Zsh
+
+```bash
+export WALLHAVEN_API_KEY=your_key_here
+```
+
+#### Fish
+
+```fish
+set -x WALLHAVEN_API_KEY your_key_here
+```
+
+You can generate your API key here:  
+https://wallhaven.cc/settings/account
+
+API documentation:  
+https://wallhaven.cc/help/api
+
+---
+
+### ⚠️ Important
+
+To download NSFW wallpapers, you must:
+
+1. Set your API key
+2. Use `-p 111`
+
+---
+
+### Example (NSFW)
+
+```bash
+export WALLHAVEN_API_KEY=your_key_here
+
+wallhaven -q "anime" -p 111 -n 24
+```
 
 ---
 
@@ -171,40 +220,11 @@ Special thanks for the CLI design and UX ideas.
 * ~~`--help` flag with improved CLI output~~ ✅
 * ~~Download progress feedback (current file, progress, etc.)~~ ✅
 * ~~Concurrent downloads for better performance~~ ✅
-* [ ] API key support (for NSFW and user-specific content)
+* ~~API key support (for NSFW and user-specific content)~~ ✅
 * [ ] `--dry-run` mode (preview downloads without saving)
 * [ ] Retry logic for failed downloads
 * [ ] Resume partial downloads
 * [ ] Optional GUI application (experimental idea)
-
----
-
-## 🔑 API Key (Planned)
-
-Wallhaven requires an API key for:
-
-* NSFW content
-* User-specific collections
-
-Future versions might support:
-
-### Using Bash / Zsh
-
-```bash
-export WALLHAVEN_API_KEY=your_key_here
-```
-
-### Using Fish
-
-```fish
-set -x WALLHAVEN_API_KEY your_key_here
-```
-
-You can generate a key at:
-https://wallhaven.cc/settings/account
-
-API docs:
-https://wallhaven.cc/help/api
 
 ---
 
@@ -216,9 +236,7 @@ MIT License
 
 ## 🚧 Status
 
-**v1.1 — Stable with progress UI and concurrent downloads**
-
-More features and improvements are planned.
+**v1.2 — Stable with API key support, progress UI, and concurrent downloads**
 
 ---
 
