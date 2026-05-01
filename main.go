@@ -67,13 +67,13 @@ func main() {
 	queryEntry.SetPlaceHolder("Search...")
 
 	resolutionEntry := widget.NewEntry()
-	resolutionEntry.SetPlaceHolder("1920x1080")
+	resolutionEntry.SetPlaceHolder("resolution: 1920x1080")
 
 	ratioEntry := widget.NewEntry()
-	ratioEntry.SetPlaceHolder("16x9")
+	ratioEntry.SetPlaceHolder("aspect ratio: 16x9")
 
 	colorEntry := widget.NewEntry()
-	colorEntry.SetPlaceHolder("hex (without #)")
+	colorEntry.SetPlaceHolder("color hex (without #)")
 
 	// --- Category ---
 	category := "111"
@@ -109,10 +109,51 @@ func main() {
 		output.SetText(output.Text + s + "\n")
 	}
 
+	// --- Count entry ---
+	countEntry := widget.NewEntry()
+	countEntry.SetPlaceHolder("Count (e.g. 50)")
+	// countEntry.SetText("") // default
+
+	// --- Sorting ---
+	sortSelect := widget.NewSelect(
+		[]string{"date_added", "relevance", "random", "views", "favorites", "toplist"},
+		nil,
+	)
+	sortSelect.SetSelected("date_added")
+
+	orderSelect := widget.NewSelect(
+		[]string{"desc", "asc"},
+		nil,
+	)
+	orderSelect.SetSelected("desc")
+
+	sortSelect.OnChanged = func(val string) {
+		if val == "random" {
+			orderSelect.Disable()
+		} else {
+			orderSelect.Enable()
+		}
+	}
+
 	// --- Download Button ---
 	startBtn := widget.NewButton("Download", func() {
 		go func() {
 			logLine("Starting download...")
+
+			// --- Parse count ---
+			count := 24
+			if countEntry.Text != "" {
+				_, err := fmt.Sscanf(countEntry.Text, "%d", &count)
+				if err != nil || count <= 0 {
+					logLine("Invalid count value")
+					return
+				}
+			}
+
+			if count > 500 {
+				logLine("Count is too large (max 500 for safety)")
+				return
+			}
 
 			query := "q=" + strings.Join(strings.Fields(queryEntry.Text), "+")
 
@@ -120,24 +161,27 @@ func main() {
 				query,
 				fmt.Sprintf("categories=%s", category),
 				fmt.Sprintf("purity=%s", purity),
+				fmt.Sprintf("sorting=%s", sortSelect.Selected),
+				fmt.Sprintf("order=%s", orderSelect.Selected),
 				fmt.Sprintf("atleast=%s", resolutionEntry.Text),
 				fmt.Sprintf("ratios=%s", ratioEntry.Text),
 				fmt.Sprintf("colors=%s", colorEntry.Text),
 			}
 
+			// --- First request to get lastPage ---
 			data, err := getRequestData(query)
 			if err != nil {
 				logLine("Error: " + err.Error())
 				return
 			}
 
-			count := 24
 			pages, remainder := getPages(count, data.Meta.LastPage)
 
 			var wallpapers []Wallpaper
 
 			for i := 1; i <= pages; i++ {
 				search := fmt.Sprintf("%s&page=%d", strings.Join(searchFlags, "&"), i)
+
 				resp, err := getRequestData(search)
 				if err != nil {
 					logLine("Fetch error: " + err.Error())
@@ -145,6 +189,7 @@ func main() {
 				}
 
 				limit := len(resp.Data)
+
 				if i == pages {
 					limit -= remainder
 				}
@@ -155,12 +200,15 @@ func main() {
 			os.MkdirAll(dirPath, os.ModePerm)
 
 			var downloaded int64
+			var skipped int64
 			var wg sync.WaitGroup
 
 			for _, wp := range wallpapers {
 				dst := filepath.Join(dirPath, filepath.Base(wp.Path))
 
+				// skip existing
 				if _, err := os.Stat(dst); err == nil {
+					atomic.AddInt64(&skipped, 1)
 					continue
 				}
 
@@ -180,12 +228,25 @@ func main() {
 			}
 
 			wg.Wait()
-			logLine(fmt.Sprintf("Done! Downloaded %d files", downloaded))
+
+			logLine(fmt.Sprintf(
+				"Done: %d downloaded, %d skipped (total requested: %d)",
+				downloaded, skipped, count,
+			))
 		}()
 	})
 
 	// --- Layout ---
-	topBar := container.NewBorder(nil, nil, nil, startBtn, queryEntry)
+	topBar := container.NewBorder(
+		nil,
+		nil,
+		nil,
+		startBtn,
+		container.NewGridWithColumns(2,
+			queryEntry,
+			countEntry,
+		),
+	)
 
 	left := container.NewVBox(
 		widget.NewLabel("Categories"),
@@ -197,7 +258,14 @@ func main() {
 		purSFW, purSketchy, purNSFW,
 	)
 
+	sorting := widget.NewCard("", "", container.NewVBox(
+		widget.NewLabel("Sort by"),
+		sortSelect,
+		orderSelect,
+	))
+
 	right := container.NewVBox(
+		widget.NewLabel("Others: "),
 		resolutionEntry,
 		ratioEntry,
 		colorEntry,
@@ -205,7 +273,7 @@ func main() {
 		dirLabel,
 	)
 
-	controls := container.NewGridWithColumns(3, left, middle, right)
+	controls := container.NewGridWithColumns(4, left, middle, sorting, right)
 
 	content := container.NewBorder(
 		topBar,
