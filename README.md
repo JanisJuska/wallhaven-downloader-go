@@ -1,23 +1,38 @@
-# wallhaven-downloader-go
+# 🖥️ wallhaven-downloader-go (Desktop GUI)
 
-A command-line wallpaper downloader from [Wallhaven API](https://wallhaven.cc), written in Go.
+A desktop GUI version of the **Wallhaven downloader**, built with Go and Fyne.
 
-This tool allows you to search, filter, and download wallpapers directly from the Wallhaven API with a flexible and scriptable CLI interface.
+This is an experimental branch that brings the original CLI functionality into a simple graphical interface.
 
 ---
 
-## ✨ Features
+## 🚧 Status
 
-* 🔍 Query-based wallpaper search
-* 🎯 Advanced filtering (categories, purity, resolution, ratios, etc.)
-* 📄 Automatic pagination handling (24 results per page)
-* 📦 Batch downloading with exact count control
-* 🗂 Preserves original filenames and extensions
-* ⚡ Lightweight and fast
-* 📖 Built-in `--help` flag for CLI usage guidance
-* 📊 **Live download progress bars (per-file) with speed & ETA**
-* 📈 **Final summary (files downloaded, skipped, total size, average speed)**
-* 🔑 **API key support (required for NSFW and user-specific content)**
+**Early development / experimental**
+
+Current features:
+
+* 🔍 Query-based search
+* 🎯 Filtering (categories, purity, resolution, ratios, colors)
+* 🔢 Custom download count
+* 📊 Sorting (date_added, views, favorites, toplist, etc.)
+* 📁 Directory selection
+* ⚡ Concurrent downloads
+* 📝 Live log output
+
+Planned:
+
+* 📊 Progress bars (per file & total)
+* 🖼 Wallpaper preview grid
+* ⏸ Pause / cancel downloads
+* 🔁 Retry failed downloads
+* 🎛 Better UI/UX
+
+---
+
+## 🖼️ Preview
+
+*(UI is minimal and subject to change)*
 
 ---
 
@@ -28,54 +43,260 @@ This tool allows you to search, filter, and download wallpapers directly from th
 ```bash
 git clone https://github.com/JanisJuska/wallhaven-downloader-go.git
 cd wallhaven-downloader-go
+git checkout desktop
 ```
 
-### 2. Build the binary
+---
+
+## 🛠 Build Instructions
+
+### 2. Install dependencies
+
+Make sure you have:
+
+* Go (1.20+ recommended)
+* Fyne toolkit
+
+Install Fyne:
 
 ```bash
-go build -o wallhaven
+go get fyne.io/fyne/v2
 ```
 
-### 3. (Optional) Move to PATH
+---
+
+### 3. Build the binary
 
 ```bash
-mv wallhaven /usr/local/bin/
+go build -o wallhaven-gui
 ```
+
+This will create an executable file:
+
+```
+wallhaven-gui
+```
+
+---
+
+## 🚀 Running the App
+
+### Option A: Run directly
+
+```bash
+./wallhaven-gui
+```
+
+---
+
+### Option B: Install system-wide (recommended)
+
+Move the binary to a directory in your `$PATH`:
+
+```bash
+sudo mv wallhaven-gui /usr/local/bin/
+```
+
+Now you can launch it from anywhere:
+
+```bash
+wallhaven-gui
+```
+
+---
+
+## 🖥️ Add to Application Launcher (Linux)
+
+To make the app appear in your desktop environment / launcher:
+
+### 1. Create a `.desktop` file
+
+```bash
+mkdir -p ~/.local/share/applications
+nano ~/.local/share/applications/wallhaven-gui.desktop
+```
+
+---
+
+### 2. Add this content
+
+```ini
+[Desktop Entry]
+Name=Wallhaven Downloader
+Comment=Download wallpapers from Wallhaven
+Exec=/usr/local/bin/wallhaven-gui
+Icon=utilities-terminal
+Terminal=false
+Type=Application
+Categories=Utility;
+```
+
+---
+
+### 3. Make it executable
+
+```bash
+chmod +x ~/.local/share/applications/wallhaven-gui.desktop
+```
+
+---
+
+### 4. Refresh desktop database (optional)
+
+```bash
+update-desktop-database ~/.local/share/applications
+```
+
+---
+
+Now you can:
+
+* Launch from app launcher
+* Bind it in your window manager (e.g. Hyprland)
+* Search it like a normal app
+
+---
+
+## ⚡ Optional: Hyprland keybind
+
+Example keybind:
+
+```ini
+bind = SUPER, W, exec, wallhaven-gui
+```
+
+---
+
+## 🧊 Optional: App Icon
+
+Right now the app uses a default icon.
+
+To improve:
+
+1. Download an icon (`.png` or `.svg`)
+2. Place it somewhere like:
+
+```bash
+~/.local/share/icons/wallhaven.png
+```
+
+3. Update `.desktop` file:
+
+```ini
+Icon=/home/youruser/.local/share/icons/wallhaven.png
+```
+
+---
+
+## 📦 Uninstall
+
+```bash
+sudo rm /usr/local/bin/wallhaven-gui
+rm ~/.local/share/applications/wallhaven-gui.desktop
+```
+
+---
+
+## 🧠 Notes
+
+* The app is self-contained (no external runtime required)
+* API key is still provided via environment variable:
+
+```bash
+export WALLHAVEN_API_KEY=your_key_here
+```
+
+You may want to add this to your shell config (`.bashrc`, `.zshrc`, etc.)
+
 
 ---
 
 ## 🚀 Usage
 
-```
-Usage: wallhaven [OPTIONS] --query <QUERY>
-```
+### Basic workflow
 
-### ⚙️ Options
+1. Enter a **search query**
+2. Set **count** (number of wallpapers)
+3. Adjust filters:
 
-| Flag           | Short | Description                                              | Default         |
-| -------------- | ----- | -------------------------------------------------------- | --------------- |
-| `--query`      | `-q`  | Query to search for                                      | none            |
-| `--count`      | `-n`  | Total wallpapers to download (auto pagination)           | `24`            |
-| `--category`   | `-c`  | 100/010/001 or combined (general/anime/people)           | `111`           |
-| `--purity`     | `-p`  | 100/110/111 (sfw/sketchy/nsfw)                           | `110`           |
-| `--sort`       | `-s`  | date_added, relevance, random, views, favorites, toplist | `date_added`    |
-| `--order`      | `-o`  | desc, asc                                                | `desc`          |
-| `--colors`     | `-C`  | Dominant color filter (hex without #)                    | none            |
-| `--resolution` | `-r`  | Minimum resolution (e.g. 1920x1080)                      | none            |
-| `--ratios`     | `-R`  | Aspect ratio filter, comma-separated                     | none            |
-| `--directory`  | `-d`  | Output directory                                         | `./wallpapers/` |
-| `--help`       | `-h`  | Print help and usage information                         | —               |
+   * Categories (General / Anime / People)
+   * Purity (SFW / Sketchy / NSFW)
+   * Resolution / ratio / color
+4. Choose sorting:
+
+   * date_added, views, favorites, etc.
+5. Select download directory
+6. Click **Download**
+
+---
+
+## ⚙️ Features
+
+### 🔍 Search
+
+Works the same as CLI:
+
+* Supports multi-word queries
+* Automatically formatted for API
+
+---
+
+### 🔢 Count
+
+* Controls exact number of wallpapers downloaded
+* Automatically handles pagination (24 per page)
+* Built-in safety cap to prevent excessive downloads
+
+---
+
+### 🎯 Filtering
+
+Supports:
+
+* Categories (`111`, `100`, etc.)
+* Purity (`100`, `110`, `111`)
+* Resolution (`1920x1080`)
+* Ratios (`16x9`)
+* Colors (hex without `#`)
+
+---
+
+### 📊 Sorting
+
+Available options:
+
+* `date_added`
+* `relevance`
+* `random`
+* `views`
+* `favorites`
+* `toplist`
+
+Order:
+
+* `desc`
+* `asc`
+
+---
+
+### 📁 File Handling
+
+* Files are saved with original names
+* Existing files are skipped automatically
+* Output directory is user-selectable
 
 ---
 
 ## 🔑 API Key Support
 
-Wallhaven requires an API key for:
+Same as CLI version.
 
-* 🔞 NSFW content (`purity=111`)
-* 👤 User-specific collections
+Required for:
 
-### Set your API key
+* 🔞 NSFW content
+* 👤 User-specific results
+
+### Set API key
 
 #### Bash / Zsh
 
@@ -89,142 +310,56 @@ export WALLHAVEN_API_KEY=your_key_here
 set -x WALLHAVEN_API_KEY your_key_here
 ```
 
-You can generate your API key here:  
+Get your key:
 https://wallhaven.cc/settings/account
 
-API documentation:  
+API docs:
 https://wallhaven.cc/help/api
 
 ---
 
-### ⚠️ Important
+## 🐧 Linux (Hyprland / tiling WM note)
 
-To download NSFW wallpapers, you must:
+If you're using a tiling window manager (like Hyprland), the app may open tiled by default.
 
-1. Set your API key
-2. Use `-p 111`
+To force floating mode:
 
----
+```ini
+windowrulev2 = float, title:^(Wallhaven Downloader)$
+```
 
-### Example (NSFW)
+Reload config:
 
 ```bash
-export WALLHAVEN_API_KEY=your_key_here
-
-wallhaven -q "anime" -p 111 -n 24
+hyprctl reload
 ```
 
 ---
 
-## 📌 Examples
+## ⚠️ Limitations
 
-### Show help
-
-```bash
-wallhaven --help
-```
-
----
-
-### Download from first page
-
-```bash
-wallhaven -q "Cyberpunk 2077"
-```
+* No progress bars yet (log output only)
+* No preview before download
+* No cancel/stop button
+* Basic UI (not final design)
 
 ---
 
-### Download 72 wallpapers (auto pagination)
+## 🔀 Branches
 
-```bash
-wallhaven -q "nature" -n 72
-```
-
----
-
-### Advanced filtering
-
-```bash
-wallhaven \
-  -q "space" \
-  -n 48 \
-  -c 100 \
-  -p 110 \
-  -s views \
-  -o desc \
-  -r 1920x1080 \
-  -R 16x9 \
-  -d ./downloads/
-```
-
----
-
-## 📊 Download Output
-
-During downloads, each file displays a live progress bar including:
-
-* Percentage completed
-* Estimated time remaining (ETA)
-* Current download speed
-
-After completion, a summary is shown:
-
-```text
-Done: 50/50 files downloaded (3 skipped) (123.47 MB) in 21.2s (5.82 MB/s)
-```
-
----
-
-## 📄 Pagination
-
-Wallhaven returns **24 results per page**.
-
-* `--count` determines how many wallpapers to download
-* The app automatically:
-
-  * Calculates how many pages are needed
-  * Fetches them
-  * Stops exactly at the requested count
-
----
-
-## 📁 File Naming
-
-* Files are saved using their original names from Wallhaven
-
-  Example:
-
-  ```
-  wallhaven-abc123.jpg
-  wallhaven-xyz789.png
-  ```
-
-* Original file extensions are preserved (`.jpg`, `.png`, etc.)
-
-* Existing files are automatically **skipped**
+| Branch    | Description              |
+| --------- | ------------------------ |
+| `main`    | Stable CLI application   |
+| `desktop` | Experimental GUI version |
 
 ---
 
 ## 🙌 Acknowledgements
 
-This project was heavily inspired by:
+Based on the original CLI project:
 
+* https://github.com/JanisJuska/wallhaven-downloader-go
 * https://github.com/Moskas/whdl
-
-Special thanks for the CLI design and UX ideas.
-
----
-
-## 🛠 Future Improvements
-
-* ~~`--help` flag with improved CLI output~~ ✅
-* ~~Download progress feedback (current file, progress, etc.)~~ ✅
-* ~~Concurrent downloads for better performance~~ ✅
-* ~~API key support (for NSFW and user-specific content)~~ ✅
-* [ ] `--dry-run` mode (preview downloads without saving)
-* [ ] Retry logic for failed downloads
-* [ ] Resume partial downloads
-* [ ] Optional GUI application (experimental idea)
 
 ---
 
@@ -234,10 +369,15 @@ MIT License
 
 ---
 
-## 🚧 Status
+## 🚀 Future Direction
 
-**v1.2 — Stable with API key support, progress UI, and concurrent downloads**
+The goal is to evolve this into a full-featured desktop app with:
+
+* Visual browsing
+* Download management
+* Better performance controls
+* Polished UI
 
 ---
 
-Enjoy downloading wallpapers! 🎉
+Enjoy downloading wallpapers with a GUI 🎉
