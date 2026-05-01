@@ -7,15 +7,16 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 
-	"github.com/spf13/pflag"
-	"github.com/vbauerster/mpb/v8"
-	"github.com/vbauerster/mpb/v8/decor"
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/widget"
 )
 
 type Response struct {
@@ -58,177 +59,204 @@ type Meta struct {
 }
 
 func main() {
-	var downloaded int64
-	var totalBytes int64
-	var skipped int64
+	a := app.New()
+	w := a.NewWindow("Wallhaven Downloader")
 
-	var wg sync.WaitGroup
-	p := mpb.New(
-		mpb.WithWidth(60),
-	)
+	// --- Inputs ---
+	queryEntry := widget.NewEntry()
+	queryEntry.SetPlaceHolder("Search...")
 
-	sem := make(chan struct{}, 5)
+	resolutionEntry := widget.NewEntry()
+	resolutionEntry.SetPlaceHolder("1920x1080")
 
-	searchFlags, pageSlice, remainder, directory := getFlags()
+	ratioEntry := widget.NewEntry()
+	ratioEntry.SetPlaceHolder("16x9")
 
-	os.MkdirAll(directory, os.ModePerm)
+	colorEntry := widget.NewEntry()
+	colorEntry.SetPlaceHolder("hex (without #)")
 
-	lastPage := len(pageSlice) - 1
+	// --- Category ---
+	category := "111"
+	catGeneral := widget.NewCheck("General", func(b bool) { category = toggleBit(category, 0, b) })
+	catAnime := widget.NewCheck("Anime", func(b bool) { category = toggleBit(category, 1, b) })
+	catPeople := widget.NewCheck("People", func(b bool) { category = toggleBit(category, 2, b) })
 
-	var allWallpapers []Wallpaper
+	// --- Purity ---
+	purity := "100"
+	purSFW := widget.NewCheck("SFW", func(b bool) { purity = toggleBit(purity, 0, b) })
+	purSketchy := widget.NewCheck("Sketchy", func(b bool) { purity = toggleBit(purity, 1, b) })
+	purNSFW := widget.NewCheck("NSFW", func(b bool) { purity = toggleBit(purity, 2, b) })
 
-	for pageCount, pageString := range pageSlice {
-		searchString := fmt.Sprintf("%v&%v", strings.Join(searchFlags, "&"), pageString)
+	// --- Directory ---
+	dirPath := "./wallpapers/"
+	dirLabel := widget.NewLabel(dirPath)
 
-		data, err := getRequestData(searchString)
-		if err != nil {
-			log.Fatal(err)
-		}
+	selectDirBtn := widget.NewButton("Select Directory", func() {
+		dialog.ShowFolderOpen(func(uri fyne.ListableURI, err error) {
+			if uri != nil {
+				dirPath = uri.Path() + string(os.PathSeparator)
+				dirLabel.SetText(dirPath)
+			}
+		}, w)
+	})
 
-		limit := len(data.Data)
+	// --- Terminal Output ---
+	output := widget.NewMultiLineEntry()
+	output.SetPlaceHolder("Logs...")
+	output.Disable()
 
-		if pageCount == lastPage {
-			limit = len(data.Data) - remainder
-		}
-
-		allWallpapers = append(allWallpapers, data.Data[:limit]...)
+	logLine := func(s string) {
+		output.SetText(output.Text + s + "\n")
 	}
 
-	totalBar := p.New(
-		int64(len(allWallpapers)),
-		mpb.BarStyle(),
-		mpb.PrependDecorators(
-			decor.Name("Downloading "),
-			decor.CountersNoUnit("%d / %d"),
-		),
-	)
+	// --- Download Button ---
+	startBtn := widget.NewButton("Download", func() {
+		go func() {
+			logLine("Starting download...")
 
-	start := time.Now()
+			query := "q=" + strings.Join(strings.Fields(queryEntry.Text), "+")
 
-	for _, x := range allWallpapers {
-		filename := path.Base(x.Path)
-		dst := fmt.Sprintf("%s%s", directory, filename)
+			searchFlags := []string{
+				query,
+				fmt.Sprintf("categories=%s", category),
+				fmt.Sprintf("purity=%s", purity),
+				fmt.Sprintf("atleast=%s", resolutionEntry.Text),
+				fmt.Sprintf("ratios=%s", ratioEntry.Text),
+				fmt.Sprintf("colors=%s", colorEntry.Text),
+			}
 
-		// skip existing files
-		if _, err := os.Stat(dst); err == nil {
-			atomic.AddInt64(&skipped, 1)
-			totalBar.Increment()
-			continue
-		}
-
-		wg.Add(1)
-
-		go func(url, dst string) {
-			defer wg.Done()
-			defer totalBar.Increment() // always increments
-
-			sem <- struct{}{}
-
-			err := downloadFile(url, dst, p)
-
-			<-sem
-
+			data, err := getRequestData(query)
 			if err != nil {
-				log.Printf("failed: %s\n", url)
+				logLine("Error: " + err.Error())
 				return
 			}
 
-			atomic.AddInt64(&downloaded, 1)
+			count := 24
+			pages, remainder := getPages(count, data.Meta.LastPage)
 
-			// get file size after download
-			info, err := os.Stat(dst)
-			if err == nil {
-				atomic.AddInt64(&totalBytes, info.Size())
+			var wallpapers []Wallpaper
+
+			for i := 1; i <= pages; i++ {
+				search := fmt.Sprintf("%s&page=%d", strings.Join(searchFlags, "&"), i)
+				resp, err := getRequestData(search)
+				if err != nil {
+					logLine("Fetch error: " + err.Error())
+					return
+				}
+
+				limit := len(resp.Data)
+				if i == pages {
+					limit -= remainder
+				}
+
+				wallpapers = append(wallpapers, resp.Data[:limit]...)
 			}
-		}(x.Path, dst)
-	}
 
-	wg.Wait()
-	p.Wait()
+			os.MkdirAll(dirPath, os.ModePerm)
 
-	elapsed := time.Since(start).Seconds()
+			var downloaded int64
+			var wg sync.WaitGroup
 
-	mb := float64(totalBytes) / (1024 * 1024)
-	speed := mb / elapsed
+			for _, wp := range wallpapers {
+				dst := filepath.Join(dirPath, filepath.Base(wp.Path))
 
-	fmt.Println()
+				if _, err := os.Stat(dst); err == nil {
+					continue
+				}
 
-	totalFiles := len(allWallpapers)
+				wg.Add(1)
+				go func(url, dst string) {
+					defer wg.Done()
 
-	fmt.Printf(
-		"Done: %d/%d files (%d skipped) (%.2f MB) in %.1fs (%.2f MB/s)\n",
-		downloaded,
-		totalFiles,
-		skipped,
-		mb,
-		elapsed,
-		speed,
+					err := downloadFileSimple(url, dst)
+					if err != nil {
+						logLine("Failed: " + url)
+						return
+					}
+
+					atomic.AddInt64(&downloaded, 1)
+					logLine("Downloaded: " + filepath.Base(dst))
+				}(wp.Path, dst)
+			}
+
+			wg.Wait()
+			logLine(fmt.Sprintf("Done! Downloaded %d files", downloaded))
+		}()
+	})
+
+	// --- Layout ---
+	topBar := container.NewBorder(nil, nil, nil, startBtn, queryEntry)
+
+	left := container.NewVBox(
+		widget.NewLabel("Categories"),
+		catGeneral, catAnime, catPeople,
 	)
+
+	middle := container.NewVBox(
+		widget.NewLabel("Purity"),
+		purSFW, purSketchy, purNSFW,
+	)
+
+	right := container.NewVBox(
+		resolutionEntry,
+		ratioEntry,
+		colorEntry,
+		selectDirBtn,
+		dirLabel,
+	)
+
+	controls := container.NewGridWithColumns(3, left, middle, right)
+
+	content := container.NewBorder(
+		topBar,
+		output,
+		nil,
+		nil,
+		controls,
+	)
+
+	w.SetContent(content)
+	w.Resize(fyne.NewSize(800, 600))
+	w.ShowAndRun()
 }
 
-func getFlags() ([]string, []string, int, string) {
-	var searchFlags []string
-	query := pflag.StringP("query", "q", "", "Query to search for")
-	count := pflag.IntP("count", "n", 24, "Total wallpapers to download; fetches multiple pages as needed")
-	category := pflag.StringP("category", "c", "111", "100/010/001 or combined (general/anime/people) ")
-	purity := pflag.StringP("purity", "p", "100", "100/110/111 (sfw/sketchy/nsfw) ")
-	sort := pflag.StringP("sort", "s", "date_added", "date_added, relevance, random, views, favorites, toplist ")
-	order := pflag.StringP("order", "o", "desc", "desc, asc ")
-	colors := pflag.StringP("colors", "C", "", "Dominant color filter (hex without #, e.g. 660000)")
-	resAtleast := pflag.StringP("resolution", "r", "", "Minimum allowed resolution. Best used together with Ratios (e.g. 1920x1080)")
-	ratio := pflag.StringP("ratios", "R", "", "Aspect ratio filter, comma-separated (e.g. 16x9,16x10)")
-	directory := pflag.StringP("directory", "d", "./wallpapers/", "Output directory ")
-	help := pflag.BoolP("help", "h", false, "Print help")
+// --- Helpers ---
 
-	pflag.Usage = func() {
-		fmt.Println("Usage: wallhaven [OPTIONS] --query <QUERY>")
-		fmt.Println("\nOptions:")
-		pflag.PrintDefaults()
+func toggleBit(s string, index int, value bool) string {
+	b := []rune(s)
+	if value {
+		b[index] = '1'
+	} else {
+		b[index] = '0'
 	}
+	return string(b)
+}
 
-	pflag.Parse()
-
-	if *help {
-		pflag.Usage()
-		os.Exit(0)
-	}
-
-	queryString := "q=" + strings.Join(strings.Fields(*query), "+")
-	catString := fmt.Sprintf("categories=%s", *category)
-	pureString := fmt.Sprintf("purity=%s", *purity)
-	sortString := fmt.Sprintf("sorting=%s", *sort)
-	ordString := fmt.Sprintf("order=%s", *order)
-	colString := fmt.Sprintf("colors=%s", *colors)
-	resString := fmt.Sprintf("atleast=%s", *resAtleast)
-	ratioString := fmt.Sprintf("ratios=%s", *ratio)
-
-	data, err := getRequestData(queryString)
+// simplified downloader (no mpb)
+func downloadFileSimple(url, dst string) error {
+	resp, err := http.Get(url)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
+	defer resp.Body.Close()
 
-	pages, remainder := getPages(*count, data.Meta.LastPage)
-
-	var pageSlice []string
-	var pagesString string
-
-	for i := 1; i <= pages; i++ {
-		pagesString = fmt.Sprintf("page=%d", i)
-		pageSlice = append(pageSlice, pagesString)
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
 	}
+	defer out.Close()
 
-	searchFlags = append(searchFlags, queryString, catString, pureString, sortString, ordString, resString, ratioString, colString)
-
-	return searchFlags, pageSlice, remainder, *directory
+	_, err = io.Copy(out, resp.Body)
+	return err
 }
 
 func getPages(count int, lastPage int) (int, int) {
 	const PAGE int = 24
 	pages := 1
 	remainder := PAGE - count
-
 	if count > PAGE {
 		var i int
+
 		var inRange bool
 		for i = 1; i <= lastPage; i++ {
 			if PAGE*i > count {
@@ -240,29 +268,23 @@ func getPages(count int, lastPage int) (int, int) {
 		if !inRange {
 			log.Fatalf("Count is too large. Max --count possible for a single query is %d", PAGE*lastPage)
 		}
-
 		pages *= i
 		remainder = PAGE*i - count
 		return pages, remainder
 	}
-
 	return pages, remainder
 }
 
 func getRequestData(searchString string) (Response, error) {
 	apiKey := os.Getenv("WALLHAVEN_API_KEY")
-
 	url := fmt.Sprintf("https://wallhaven.cc/api/v1/search?%s", searchString)
-
 	if apiKey != "" {
-		url = fmt.Sprintf("%s&apikey=%s", url, apiKey)
-		// request.Header.Set("X-API-Key", apiKey)
+		url = fmt.Sprintf("%s&apikey=%s", url, apiKey) // request.Header.Set("X-API-Key", apiKey)
 	} else {
 		log.Println("No API key provided (WALLHAVEN_API_KEY). NSFW results may be unavailable.")
 	}
 
 	client := &http.Client{}
-
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return Response{}, err
@@ -279,62 +301,8 @@ func getRequestData(searchString string) (Response, error) {
 	if err != nil {
 		return Response{}, err
 	}
-
 	var data Response
-
-	json.Unmarshal(body, &data)
-	// if err != nil {
-	// 	return Response{}, err
-	// }
+	json.Unmarshal(body, &data) // if err != nil { // return Response{}, err // }
 
 	return data, nil
-}
-
-func downloadFile(url, dst string, p *mpb.Progress) error {
-	resp, err := http.Get(url)
-	if err != nil {
-		return err
-	}
-
-	defer resp.Body.Close()
-
-	size := resp.ContentLength
-	if size <= 0 {
-		size = -1
-	}
-
-	filename := path.Base(dst)
-
-	bar := p.New(
-		size,
-		mpb.BarStyle(),
-		mpb.PrependDecorators(
-			decor.Name(shortName(filename)+" "),
-			decor.Percentage(),
-		),
-		mpb.AppendDecorators(
-			decor.EwmaETA(decor.ET_STYLE_GO, 60),
-			decor.AverageSpeed(decor.SizeB1024(0), "% .2f"),
-		),
-	)
-
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-
-	defer out.Close()
-
-	reader := bar.ProxyReader(resp.Body)
-	defer reader.Close()
-
-	_, err = io.Copy(out, reader)
-	return err
-}
-
-func shortName(name string) string {
-	if len(name) > 30 {
-		return name[:27] + "..."
-	}
-	return name
 }
